@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Auditoria de espelhos de ponto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --bg:#EEF2F4; --surface:#FFFFFF; --surface2:#F6F8F9; --ink:#17232D; --muted:#5A6A76; --line:#D3DCE2;
+  --accent:#1F5F7A; --accent-ink:#FFFFFF; --bad:#B3261E; --bad-bg:#FBE9E7; --warn:#8A5A00; --warn-bg:#FFF3D6;
+  --ok:#2E7D4F; --ok-bg:#E5F3EA; --work:#1F5F7A; color-scheme:light;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10181E; --surface:#18232B; --surface2:#1E2B34; --ink:#E4ECF1; --muted:#9AAAB5; --line:#2F3F4A;
+    --accent:#5FB0D1; --accent-ink:#0D1A20; --bad:#FF8A80; --bad-bg:#3A1D1B; --warn:#F0C060; --warn-bg:#3A2E12;
+    --ok:#7BD39C; --ok-bg:#183326; --work:#5FB0D1; color-scheme:dark;
+  }
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.5;font-variant-numeric:tabular-nums}
+.wrap{max-width:1150px;margin:0 auto;padding:28px 18px 60px}
+h1{font-family:"IBM Plex Serif",Georgia,serif;font-weight:600;font-size:clamp(1.7rem,3.5vw,2.3rem);line-height:1.15;margin:0 0 6px}
+h2{font-family:"IBM Plex Serif",Georgia,serif;font-weight:600;font-size:1.25rem;margin:0 0 12px}
+h3{font-size:1rem;margin:22px 0 8px}
+p.lead{color:var(--muted);margin:0 0 24px;max-width:72ch}
+section.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:18px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:4px}
+input,select{width:100%;font:inherit;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.hint{font-size:.8rem;color:var(--muted);margin-top:4px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px}
+button{font:inherit;font-weight:500;border-radius:6px;padding:9px 16px;cursor:pointer;border:1px solid var(--line);background:var(--surface2);color:var(--ink)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.small{padding:4px 10px;font-size:.85rem}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:26px;text-align:center;background:var(--surface2);cursor:pointer}
+.drop.over{border-color:var(--accent)}
+.drop strong{display:block;font-size:1.05rem}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:middle;white-space:nowrap}
+th{font-weight:600;color:var(--muted);font-size:.8rem;background:var(--surface2)}
+td.num,th.num{text-align:right}
+td.wrapc{white-space:normal;min-width:240px}
+tfoot th{color:var(--ink)}
+.msg{padding:10px 12px;border-radius:6px;background:var(--warn-bg);color:var(--warn);margin-top:10px;font-size:.88rem}
+.msg.ok{background:var(--ok-bg);color:var(--ok)}
+.n0{color:var(--muted)}
+.nb{color:var(--bad);font-weight:600}
+.findings{list-style:none;padding:0;margin:14px 0 4px;display:grid;gap:8px}
+.findings li{border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:6px;padding:10px 12px;background:var(--surface2)}
+.findings li.ok{border-left-color:var(--ok)}
+.findings li.w{border-left-color:var(--warn)}
+.findings b{display:block}
+.tag{display:inline-block;font-size:.75rem;padding:1px 7px;border-radius:10px;margin:1px 2px;background:var(--bad-bg);color:var(--bad);font-weight:500}
+.tag.w{background:var(--warn-bg);color:var(--warn)}
+.bar{position:relative;height:14px;min-width:200px;background:var(--surface2);border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;background:var(--work)}
+.bar b{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+tr.off td{color:var(--muted)}
+.reporthead{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:flex-start}
+.meta{font-size:.9rem;color:var(--muted)}
+.meta b{color:var(--ink);font-weight:500}
+.legal{font-size:.82rem;color:var(--muted);max-width:85ch}
+details>summary{cursor:pointer;color:var(--accent);font-weight:500;margin:18px 0 8px}
+@media print{
+  body{background:#fff;color:#000}
+  .noprint{display:none!important}
+  section.panel{border:none;padding:0}
+  .wrap{padding:0;max-width:none}
+  th,td{white-space:normal}
+  details{display:block} details>summary{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="noprint">
+    <h1>Auditoria de espelhos de ponto</h1>
+    <p class="lead">Envie um ou vários espelhos de ponto em PDF, escolha o colaborador pela matrícula e veja os desvios: hora extra, excesso de jornada, intrajornada, interjornada e descanso na folga. Os arquivos são lidos só no seu navegador; nada é enviado para servidor.</p>
+  </header>
+
+  <section class="panel noprint">
+    <h2>Espelhos de ponto</h2>
+    <label class="drop" id="drop" for="fileIn">
+      <strong>Clique ou arraste os PDFs aqui</strong>
+      <span class="hint">Aceita vários arquivos de uma vez, com um ou vários colaboradores em cada um.</span>
+      <input type="file" id="fileIn" accept=".pdf,.txt" multiple hidden>
+    </label>
+    <div id="fileMsg"></div>
+    <div class="scroll" id="fileList"></div>
+  </section>
+
+  <section class="panel noprint">
+    <details>
+      <summary style="margin:0">Parâmetros de análise</summary>
+      <div class="grid" style="margin-top:14px">
+        <div><label for="pJor">Jornada diária (se o espelho não informar)</label><input id="pJor" value="08:00"></div>
+        <div><label for="pSem">Jornada semanal</label><input id="pSem" value="44:00"></div>
+        <div><label for="pLimModo">Limite diário (excesso de jornada)</label><select id="pLimModo"><option value="jornada">Jornada do espelho + 2h</option><option value="fixo">Valor fixo</option></select></div>
+        <div><label for="pLim">Limite fixo</label><input id="pLim" value="10:00"><div class="hint">Usado só com “Valor fixo”.</div></div>
+        <div><label for="pTol">Tolerância diária (min)</label><input id="pTol" type="number" value="10" min="0"><div class="hint">CLT art. 58, §1º.</div></div>
+        <div><label for="pIntra">Intrajornada mínima (acima de 6h)</label><input id="pIntra" value="00:30"><div class="hint">CLT exige 1h; 30 min com norma coletiva.</div></div>
+        <div><label for="pIntra2">Intrajornada mínima (4h a 6h)</label><input id="pIntra2" value="00:15"></div>
+        <div><label for="pIntMax">Intrajornada máxima</label><input id="pIntMax" value="02:00"><div class="hint">Deixe 00:00 para não verificar.</div></div>
+        <div><label for="pInter">Interjornada mínima</label><input id="pInter" value="11:00"></div>
+        <div><label for="pDsr">Descanso mínimo na folga</label><input id="pDsr" value="35:00"></div>
+        <div><label for="pDias">Máximo de dias seguidos sem folga</label><input id="pDias" type="number" value="6" min="1"></div>
+        <div><label for="pModo">Intervalo considerado</label><select id="pModo"><option value="maior">Maior intervalo do dia</option><option value="soma">Soma dos intervalos</option></select></div>
+        <div><label for="pNot">Hora noturna reduzida</label><select id="pNot"><option value="1">Aplicar (22h às 5h)</option><option value="0">Não aplicar</option></select></div>
+        <div><label for="pMax">Marcações por dia no espelho</label><input id="pMax" type="number" value="4" min="2" step="2"><div class="hint">Recarregue os PDFs se mudar.</div></div>
+      </div>
+      <div class="row"><button class="primary" id="btnReapl">Aplicar parâmetros</button></div>
+    </details>
+  </section>
+
+  <section class="panel noprint" id="pnlEmp" hidden>
+    <h2>Colaboradores</h2>
+    <div class="grid">
+      <div><label for="fMat">Matrícula ou nome</label><input id="fMat" list="dlMat" placeholder="Ex.: 355469"><datalist id="dlMat"></datalist></div>
+    </div>
+    <div class="row"><button class="primary" id="btnVer">Ver desvios</button><button id="btnCsvAll">Exportar desvios de todos (CSV)</button></div>
+    <div class="scroll" style="margin-top:14px" id="empTable"></div>
+  </section>
+
+  <section class="panel" id="report" hidden></section>
+</div>
+<script>
+/* ===== Núcleo: leitura e análise (sem DOM) ===== */
+const DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const OFF=/(folga|dsr|descanso|feriado|f[ée]rias|falta|atestado|afastad|licen[çc]a|compensa|abono)/i;
+function hm(s){ if(s==null) return NaN; s=String(s).trim().replace('h',':'); const m=s.match(/^(\d{1,3}):(\d{2})$/); return m? (+m[1])*60+(+m[2]) : NaN; }
+function fmt(min){ if(min==null||isNaN(min)) return '—'; const neg=min<0; min=Math.abs(Math.round(min)); return (neg?'-':'')+String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0'); }
+function dayNum(iso){ const [y,m,d]=iso.split('-').map(Number); return Math.round(Date.UTC(y,m-1,d)/86400000); }
+function isoN(n){ return new Date(n*86400000).toISOString().slice(0,10); }
+function brDate(iso){ const [y,m,d]=iso.split('-'); return d+'/'+m+'/'+y; }
+function weekday(iso){ return DIAS[new Date(dayNum(iso)*86400000).getUTCDay()]; }
+function pad(n){ return String(n).padStart(2,'0'); }
+
+const RE_DAY=/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?=\s|$)\s*\*?\s*(?:(dom|seg|ter|qua|qui|sex|s[áa]b)[a-zçáãéêíóõú]*\.?(?=\s|$))?\s*\*?\s*(.*)$/i;
+const RE_MARK=/^(\d{1,2}:\d{2}|-{2,}|—|–)$/;
+
+function parseEspelho(text, fileName, opt){
+  opt=opt||{}; const maxMarks=opt.maxMarks||4; const anoPad=opt.ano||new Date().getFullYear();
+  const lines=text.split(/\r?\n/).map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean);
+  const blocks=[]; let cur=null, empresa=null, header=null;
+  const newBlock=(mat,nome)=>{ cur={file:fileName, mat:mat||'(sem matrícula)', nome:nome||'', funcao:'', setor:'', empresa:empresa?empresa.nome:'', cnpj:empresa?empresa.cnpj:'', jornada:null, pIni:null, pFim:null, days:[], resumo:{}}; blocks.push(cur); };
+  for(const line of lines){
+    let m;
+    if((m=line.match(/(?:\d{2}\/\d{2}\/\d{2,4}\s+)?([A-ZÀ-Ú0-9][^:]*?)\s+CNPJ:?\s*([\d.\/-]{14,20})/i))) empresa={nome:m[1].replace(/^.*?\d{2}\/\d{2}\/\d{2,4}\s+/,'').trim(), cnpj:m[2]};
+    if((m=line.match(/Funcion[áa]rio:\s*(\d+)\s*[-–]\s*(.+?)(?=\s+CTPS|\s+PIS|\s+Admiss|\s+CPF|$)/i))){ newBlock(m[1], m[2].trim()); }
+    if(!cur && RE_DAY.test(line) && /\d{1,2}:\d{2}|DSR|DESCANSO|FOLGA/i.test(line)) newBlock();
+    if(!cur) continue;
+    if((m=line.match(/Per[íi]odo:?\s*(\d{2})\/(\d{2})\/(\d{4})\s*(?:a|at[ée])\s*(\d{2})\/(\d{2})\/(\d{4})/i))){ cur.pIni=`${m[3]}-${m[2]}-${m[1]}`; cur.pFim=`${m[6]}-${m[5]}-${m[4]}`; }
+    if((m=line.match(/Fun[çc][ãa]o:\s*(.+?)(?=\s+Jornada|\s+Hor[áa]rio|\s+Escala|$)/i))) cur.funcao=m[1].trim();
+    if((m=line.match(/Setor(?: Funcional)?:\s*(.+?)(?=\s+Fun[çc][ãa]o:|$)/i))) cur.setor=m[1].trim();
+    if((m=line.match(/Jornada:?\s+(\d{1,2}:\d{2})/i))) cur.jornada=hm(m[1]);
+    if(/^DATA\s+DIA\b/i.test(line)){ const t=line.split(' '); const fi=t.findIndex(x=>/^FIM/i.test(x)); if(fi>=0){ const cols=t.slice(fi+1); header={extra:cols.findIndex(c=>/^EXTRA/i.test(c)), total:cols.findIndex(c=>/^TOTAL/i.test(c))}; } continue; }
+    if((m=line.match(/(\d+:\d{2})\s+HORAS EXTRAS 50/i))) cur.resumo.he50=hm(m[1]);
+    if((m=line.match(/(\d+:\d{2})\s+HORAS EXTRAS 100/i))) cur.resumo.he100=hm(m[1]);
+    if((m=line.match(/(\d+:\d{2})\s+HORAS COMPENSADAS/i))) cur.resumo.comp=hm(m[1]);
+    const d=line.match(RE_DAY); if(!d) continue;
+    const dd=+d[1], mm=+d[2]; if(mm<1||mm>12||dd<1||dd>31) continue;
+    let y;
+    if(d[3]){ y=+d[3]; if(y<100) y+=2000; }
+    else if(cur.pIni){ const yi=+cur.pIni.slice(0,4), mi=+cur.pIni.slice(5,7), yf=+cur.pFim.slice(0,4); y=(yi!==yf && mm<mi)?yf:yi; }
+    else y=anoPad;
+    const rest=(d[5]||'').trim(); const tok=rest?rest.split(' '):[];
+    const marks=[]; let i=0;
+    while(i<tok.length && marks.length<maxMarks && RE_MARK.test(tok[i])){ marks.push(tok[i]); i++; }
+    const punches=marks.filter(x=>/:/.test(x));
+    if(!d[4] && !punches.length && !OFF.test(rest)) continue; // linha que não é de dia
+    const day={date:`${y}-${pad(mm)}-${pad(dd)}`, marks:punches, status:'', extraEsp:null, totalEsp:null};
+    if(!punches.length){ const t=rest.replace(/^[-–—\s]+/,''); day.status=t? t.charAt(0).toUpperCase()+t.slice(1).toLowerCase() : 'Sem marcação'; }
+    else if(header && marks.length===maxMarks){ const after=tok.slice(i); if(header.extra>=0) day.extraEsp=hm(after[header.extra]); if(header.total>=0) day.totalEsp=hm(after[header.total]); }
+    cur.days.push(day);
+  }
+  return blocks.filter(b=>b.days.length);
+}
+
+function nightMinutes(a,b){ let s=0; for(let k=0;k<3;k++){ const w0=k*1440-120, w1=k*1440+300; s+=Math.max(0,Math.min(b,w1)-Math.max(a,w0)); } return s; }
+
+function analyze(emp,P){
+  const J=emp.jornada||P.jor;
+  const LIM= P.limModo==='jornada'? J+120 : P.lim;
+  const days=emp.days.map(d=>({...d})).sort((a,b)=>a.date<b.date?-1:1);
+  const occ=[]; const add=(d,tipo,det,min)=>occ.push({date:d.date,tipo,det,min});
+  days.forEach(d=>{
+    d.flags=[]; d.n=dayNum(d.date);
+    const ts=d.marks.map(hm).filter(x=>!isNaN(x));
+    if(!ts.length){ d.work=false; return; }
+    let prev=-1, off=0; const abs=ts.map(t=>{ if(prev>=0 && t+off<prev) off+=1440; prev=t+off; return t+off; });
+    if(abs.length%2){ d.flags.push({t:'Marcação ímpar',c:'w'}); add(d,'Marcação ímpar','Número ímpar de batidas; a última foi desconsiderada.',null); abs.pop(); }
+    d.pairs=[]; for(let i=0;i+1<abs.length;i+=2) d.pairs.push([abs[i],abs[i+1]]);
+    if(!d.pairs.length){ d.work=false; return; }
+    d.work=true;
+    d.real=d.pairs.reduce((s,p)=>s+(p[1]-p[0]),0);
+    d.night=d.pairs.reduce((s,p)=>s+nightMinutes(p[0],p[1]),0);
+    d.worked=Math.round(d.real+(P.noturna? d.night*(60/52.5-1):0));
+    d.breaks=[]; for(let i=1;i<d.pairs.length;i++) d.breaks.push(d.pairs[i][0]-d.pairs[i-1][1]);
+    d.brk=d.breaks.length? (P.modo==='soma'? d.breaks.reduce((a,b)=>a+b,0) : Math.max(...d.breaks)) : 0;
+    d.start=d.n*1440+d.pairs[0][0]; d.end=d.n*1440+d.pairs[d.pairs.length-1][1];
+    d.amp=d.end-d.start;
+    const dif=d.worked-J; d.he=0;
+    if(dif>P.tol){ d.he=dif; d.flags.push({t:'Hora extra'}); add(d,'Hora extra','Trabalhou '+fmt(d.worked)+' para jornada de '+fmt(J)+'.',dif); }
+    if(d.worked>LIM){ d.flags.push({t:'Excesso de jornada'}); add(d,'Excesso de jornada','Jornada de '+fmt(d.worked)+', acima do limite de '+fmt(LIM)+'.',d.worked-LIM); }
+    let req=0; if(d.worked>360) req=P.intra; else if(d.worked>240) req=P.intra2;
+    if(req && d.brk<req){ d.flags.push({t:'Intrajornada'}); add(d,'Intrajornada inferior ao mínimo',(d.breaks.length?'Intervalo de '+fmt(d.brk):'Sem intervalo')+' para jornada de '+fmt(d.worked)+' (mínimo '+fmt(req)+').',req-d.brk); }
+    const big=d.breaks.length? Math.max(...d.breaks):0;
+    if(P.intMax && big>P.intMax){ d.flags.push({t:'Intervalo acima de '+fmt(P.intMax),c:'w'}); add(d,'Intervalo intrajornada superior ao máximo','Intervalo de '+fmt(big)+'; amplitude da jornada '+fmt(d.amp)+'.',big-P.intMax); }
+  });
+  const wd=days.filter(d=>d.work);
+  for(let i=1;i<wd.length;i++){
+    const a=wd[i-1], b=wd[i], gap=b.start-a.end, dd=b.n-a.n; b.gapPrev=gap;
+    if(dd===1){ if(gap<P.inter){ b.flags.push({t:'Interjornada'}); add(b,'Interjornada inferior ao mínimo','Saída '+brDate(a.date)+' '+fmt(a.end%1440)+', entrada '+brDate(b.date)+' '+fmt(b.start%1440)+': descanso de '+fmt(gap)+'.',P.inter-gap); } }
+    else if(dd>=2 && gap<P.dsr){ b.flags.push({t:'Descanso na folga'}); add(b,'Descanso inferior ao mínimo na folga','Saída '+brDate(a.date)+' '+fmt(a.end%1440)+', entrada '+brDate(b.date)+' '+fmt(b.start%1440)+': descanso de '+fmt(gap)+'.',P.dsr-gap); }
+  }
+  let streak=0,lastN=null;
+  wd.forEach(d=>{ streak=(lastN!=null&&d.n===lastN+1)?streak+1:1; lastN=d.n; d.streak=streak;
+    if(streak>P.dias){ d.flags.push({t:'Sem folga semanal'}); add(d,'Trabalho sem folga semanal',streak+'º dia consecutivo de trabalho.',null); } });
+  const weeks={};
+  wd.forEach(d=>{ const dow=new Date(d.n*86400000).getUTCDay(); const mon=d.n-((dow+6)%7); (weeks[mon]=weeks[mon]||{mon,worked:0,he:0}); weeks[mon].worked+=d.worked; weeks[mon].he+=d.he; });
+  const wk=Object.values(weeks).sort((a,b)=>a.mon-b.mon).map(w=>({...w, exc:Math.max(0,w.worked-P.sem)}));
+  const by=t=>occ.filter(o=>o.tipo.startsWith(t)); const tot=a=>a.reduce((s,o)=>s+(o.min||0),0);
+  const S={he:by('Hora extra'),ex:by('Excesso'),ia:by('Intrajornada inferior'),im:by('Intervalo intrajornada superior'),ie:by('Interjornada'),ds:by('Descanso inferior'),sf:by('Trabalho sem folga'),mi:by('Marcação')};
+  const T={}; for(const k in S) T[k]=tot(S[k]);
+  return {emp,J,LIM,days,occ,wk,S,T,trab:wd.reduce((s,d)=>s+d.worked,0),nTrab:wd.length};
+}
+</script>
+<script>
+/* ===== Interface ===== */
+(function(){
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+if(window.pdfjsLib){ try{ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){} }
+
+const files=[];          // {name, blocks}
+let emps={};             // mat -> colaborador consolidado
+let current=null;
+
+function params(){
+  return {jor:hm($('#pJor').value)||480, sem:hm($('#pSem').value)||2640, lim:hm($('#pLim').value)||600, limModo:$('#pLimModo').value,
+    tol:+$('#pTol').value||0, intra:hm($('#pIntra').value)||0, intra2:hm($('#pIntra2').value)||0, intMax:hm($('#pIntMax').value)||0,
+    inter:hm($('#pInter').value)||660, dsr:hm($('#pDsr').value)||2100, dias:+$('#pDias').value||6, modo:$('#pModo').value, noturna:$('#pNot').value==='1'};
+}
+
+async function pdfToText(file){
+  if(!window.pdfjsLib) throw new Error('o leitor de PDF não carregou; verifique a conexão');
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+  const out=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const tc=await (await pdf.getPage(p)).getTextContent();
+    const items=tc.items.filter(it=>it.str&&it.str.trim()).map(it=>({x:it.transform[4],y:it.transform[5],s:it.str}));
+    items.sort((a,b)=>b.y-a.y||a.x-b.x);
+    let line=[], y=null;
+    const flush=()=>{ if(line.length) out.push(line.sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ')); line=[]; };
+    items.forEach(it=>{ if(y===null||Math.abs(it.y-y)>2.5){ flush(); y=it.y; } line.push(it); });
+    flush();
+  }
+  return out.join('\n');
+}
+
+async function addFiles(list){
+  const msg=$('#fileMsg'); const errs=[]; let ok=0;
+  msg.innerHTML='<div class="msg ok">Lendo '+list.length+' arquivo(s)…</div>';
+  for(const f of list){
+    try{
+      const txt=/\.pdf$/i.test(f.name)||f.type==='application/pdf'? await pdfToText(f) : await f.text();
+      const blocks=parseEspelho(txt,f.name,{maxMarks:+$('#pMax').value||4});
+      if(!blocks.length){ errs.push(f.name+': nenhum dia de ponto encontrado'); continue; }
+      const i=files.findIndex(x=>x.name===f.name); if(i>=0) files.splice(i,1);
+      files.push({name:f.name,blocks,text:txt}); ok++;
+    }catch(e){ errs.push(f.name+': '+e.message); }
+  }
+  rebuild();
+  msg.innerHTML=(ok?'<div class="msg ok">'+ok+' arquivo(s) carregado(s).</div>':'')+(errs.length?'<div class="msg">Não foi possível ler: '+errs.map(esc).join('; ')+'</div>':'');
+}
+
+function rebuild(){
+  emps={};
+  files.forEach(f=>f.blocks.forEach(b=>{
+    const e=emps[b.mat]||(emps[b.mat]={mat:b.mat,nome:'',funcao:'',setor:'',empresa:'',cnpj:'',jornada:null,days:{},periodos:[],resumo:{he50:0,he100:0,comp:0},files:new Set(),dup:0});
+    ['nome','funcao','setor','empresa','cnpj'].forEach(k=>{ if(b[k]) e[k]=b[k]; });
+    if(b.jornada) e.jornada=b.jornada;
+    e.files.add(f.name);
+    if(b.pIni) e.periodos.push(brDate(b.pIni)+' a '+brDate(b.pFim));
+    for(const k of ['he50','he100','comp']) if(b.resumo[k]) e.resumo[k]+=b.resumo[k];
+    b.days.forEach(d=>{ if(e.days[d.date]){ e.dup++; if(!e.days[d.date].marks.length && d.marks.length) e.days[d.date]=d; } else e.days[d.date]=d; });
+  }));
+  Object.values(emps).forEach(e=>{ e.days=Object.values(e.days); });
+  renderFiles(); renderEmps();
+  if(current && emps[current]) showReport(current); else if(current){ current=null; $('#report').hidden=true; }
+}
+
+function renderFiles(){
+  $('#fileList').innerHTML= files.length? `<table style="margin-top:14px"><thead><tr><th>Arquivo</th><th>Colaboradores</th><th>Período</th><th></th></tr></thead><tbody>${files.map((f,i)=>{
+    const per=[...new Set(f.blocks.filter(b=>b.pIni).map(b=>brDate(b.pIni)+' a '+brDate(b.pFim)))].join(', ')||'—';
+    return `<tr><td>${esc(f.name)}</td><td class="wrapc">${f.blocks.map(b=>esc(b.mat+' – '+(b.nome||'sem nome'))).join('<br>')}</td><td>${esc(per)}</td><td><button class="small" data-rm="${i}">Remover</button></td></tr>`;}).join('')}</tbody></table>
+    <div class="row"><button class="small" id="btnClear">Remover todos</button></div>` : '';
+}
+$('#fileList').addEventListener('click',e=>{
+  if(e.target.dataset.rm!=null){ files.splice(+e.target.dataset.rm,1); rebuild(); }
+  if(e.target.id==='btnClear'){ files.length=0; rebuild(); $('#fileMsg').innerHTML=''; }
+});
+
+function renderEmps(){
+  const list=Object.values(emps).sort((a,b)=>a.nome.localeCompare(b.nome));
+  $('#pnlEmp').hidden=!list.length;
+  $('#dlMat').innerHTML=list.map(e=>`<option value="${esc(e.mat)}">${esc(e.nome)}</option>`).join('');
+  const q=$('#fMat').value.trim().toLowerCase();
+  const P=params();
+  const rows=list.filter(e=>!q||e.mat.toLowerCase().includes(q)||e.nome.toLowerCase().includes(q)).map(e=>{
+    const r=analyze(e,P); const c=(k)=>{ const n=r.S[k].length; return `<td class="num ${n?'nb':'n0'}">${n}</td>`; };
+    return `<tr><td>${esc(e.mat)}</td><td>${esc(e.nome)}</td><td>${esc(e.funcao)}</td><td>${esc(e.periodos.join(', ')||'—')}</td><td class="num">${fmt(r.T.he)}</td>${c('ex')}${c('ie')}${c('ia')}${c('ds')}${c('sf')}<td><button class="small" data-ver="${esc(e.mat)}">Ver desvios</button></td></tr>`;
+  });
+  $('#empTable').innerHTML= rows.length? `<table><thead><tr><th>Matrícula</th><th>Nome</th><th>Função</th><th>Período</th><th class="num">Horas extras</th><th class="num">Excesso</th><th class="num">Interjornada</th><th class="num">Intrajornada</th><th class="num">Folga &lt; 35h</th><th class="num">Sem folga</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table><p class="hint">Números de dias com o desvio.</p>` : '<p class="hint">Nenhum colaborador corresponde à busca.</p>';
+}
+$('#fMat').addEventListener('input',renderEmps);
+$('#empTable').addEventListener('click',e=>{ const m=e.target.dataset.ver; if(m) showReport(m); });
+$('#btnVer').addEventListener('click',()=>{
+  const q=$('#fMat').value.trim().toLowerCase();
+  const hit=emps[$('#fMat').value.trim()]||Object.values(emps).find(e=>e.mat.toLowerCase().includes(q)||e.nome.toLowerCase().includes(q));
+  if(hit) showReport(hit.mat); else $('#report').hidden=true, alert('Matrícula não encontrada nos espelhos carregados.');
+});
+$('#btnReapl').addEventListener('click',()=>{ renderEmps(); if(current) showReport(current); });
+
+function bar(d){
+  if(!d.work) return '';
+  const maxEnd=Math.max(...d.pairs.map(p=>p[1])), tot=Math.max(1440,maxEnd);
+  let h='<div class="bar" aria-hidden="true">'; for(let k=360;k<tot;k+=360) h+='<b style="left:'+(k/tot*100)+'%"></b>';
+  d.pairs.forEach(p=>{ h+='<i style="left:'+(p[0]/tot*100)+'%;width:'+((p[1]-p[0])/tot*100)+'%"></i>'; });
+  return h+'</div>';
+}
+function minmax(arr,f){ const v=arr.map(f).filter(x=>x!=null&&!isNaN(x)); return v.length? [Math.min(...v),Math.max(...v)] : null; }
+function datas(arr){ return arr.map(o=>brDate(o.date).slice(0,5)).join(', '); }
+
+function findings(r,P){
+  const {S,T,emp}=r; const L=[];
+  const pago=emp.resumo.he50+emp.resumo.he100, comp=emp.resumo.comp;
+  if(S.he.length){
+    let t='Total de '+fmt(T.he)+' em '+S.he.length+' dias.';
+    if(pago||comp){ const sobra=T.he-pago-comp; t+=' O espelho pagou '+fmt(pago)+' como extra'+(comp?' e lançou '+fmt(comp)+' como compensadas':'')+(sobra>0?'; ficaram '+fmt(sobra)+' sem pagamento nem compensação comprovada.':'.'); }
+    const wex=r.wk.filter(w=>w.exc>0); if(wex.length) t+=' '+wex.length+' semana(s) acima de '+fmt(P.sem)+'.';
+    L.push(['Hora extra',t,'']);
+  } else L.push(['Hora extra','Nenhum desvio.','ok']);
+  L.push(['Excesso de jornada (acima de '+fmt(r.LIM)+')', S.ex.length? S.ex.length+' dias ('+datas(S.ex)+'), total de '+fmt(T.ex)+'.' : 'Nenhum desvio.', S.ex.length?'':'ok']);
+  if(S.ie.length){ const mm=minmax(S.ie,o=>P.inter-o.min); L.push(['Interjornada inferior a '+fmt(P.inter), S.ie.length+' dias, total de '+fmt(T.ie)+' suprimidas. Descanso entre '+fmt(mm[0])+' e '+fmt(mm[1])+'.','']); }
+  else L.push(['Interjornada inferior a '+fmt(P.inter),'Nenhum desvio.','ok']);
+  L.push(['Intrajornada inferior ao mínimo', S.ia.length? S.ia.length+' dias ('+datas(S.ia)+'), total de '+fmt(T.ia)+' suprimidos.' : 'Nenhum desvio.', S.ia.length?'':'ok']);
+  L.push(['Descanso inferior a '+fmt(P.dsr)+' na folga', S.ds.length? S.ds.length+' ocorrências ('+datas(S.ds)+'), total de '+fmt(T.ds)+' suprimidas.' : 'Nenhum desvio.', S.ds.length?'':'ok']);
+  const maxStreak=Math.max(0,...r.days.filter(d=>d.work).map(d=>d.streak));
+  L.push(['Dias seguidos sem folga', S.sf.length? S.sf.length+' dias além do '+P.dias+'º consecutivo ('+datas(S.sf)+').' : 'Nenhum desvio (máximo de '+maxStreak+' dias).', S.sf.length?'':'ok']);
+  if(S.im.length){ const mm=minmax(r.days.filter(d=>d.work&&d.breaks.length),d=>Math.max(...d.breaks)); L.push(['Atenção: intervalo acima de '+fmt(P.intMax), S.im.length+' dias com intervalo entre '+fmt(mm[0])+' e '+fmt(mm[1])+'. Só é regular com acordo escrito ou norma coletiva.','w']); }
+  if(S.mi.length) L.push(['Atenção: marcações ímpares', S.mi.length+' dias ('+datas(S.mi)+'). Confira o espelho.','w']);
+  return L;
+}
+
+function occTable(arr,col){
+  if(!arr.length) return '<p class="hint">Nenhuma ocorrência.</p>';
+  const tot=arr.reduce((s,o)=>s+(o.min||0),0);
+  return `<div class="scroll"><table><thead><tr><th>Data</th><th>Dia</th><th>Descrição</th>${col?'<th class="num">'+col+'</th>':''}</tr></thead><tbody>${arr.map(o=>`<tr><td>${brDate(o.date)}</td><td>${weekday(o.date)}</td><td class="wrapc">${esc(o.det)}</td>${col?'<td class="num">'+fmt(o.min)+'</td>':''}</tr>`).join('')}</tbody>${col?`<tfoot><tr><th colspan="3">Total</th><th class="num">${fmt(tot)}</th></tr></tfoot>`:''}</table></div>`;
+}
+
+function showReport(mat){
+  current=mat; const e=emps[mat]; const P=params(); const r=analyze(e,P);
+  const days=r.days; const per=days.length? brDate(days[0].date)+' a '+brDate(days[days.length-1].date):'—';
+  const F=findings(r,P);
+  const html=`
+  <div class="reporthead">
+    <div><h2 style="font-size:1.6rem;margin-bottom:4px">Desvios do espelho de ponto</h2>
+      <div class="meta">Colaborador: <b>${esc(e.nome||'—')}</b> &nbsp; Matrícula: <b>${esc(e.mat)}</b> &nbsp; Função: <b>${esc(e.funcao||'—')}</b></div>
+      <div class="meta">Empresa: <b>${esc(e.empresa||'—')}</b>${e.cnpj?' – CNPJ '+esc(e.cnpj):''} &nbsp; Setor: <b>${esc(e.setor||'—')}</b></div>
+      <div class="meta">Período: <b>${per}</b> &nbsp; Jornada: <b>${fmt(r.J)}</b> &nbsp; Dias trabalhados: <b>${r.nTrab}</b> &nbsp; Horas trabalhadas: <b>${fmt(r.trab)}</b></div>
+    </div>
+    <div class="noprint row" style="margin-top:0"><button class="primary" onclick="window.print()">Imprimir ou salvar PDF</button><button id="btnCsv">Exportar CSV</button></div>
+  </div>
+  <ul class="findings">${F.map(([t,d,c])=>`<li class="${c}"><b>${esc(t)}</b>${esc(d)}</li>`).join('')}</ul>
+  ${e.dup?'<p class="hint">'+e.dup+' dia(s) apareceram em mais de um espelho; foi mantida a primeira leitura com marcações.</p>':''}
+
+  <details><summary>Ver ocorrências por critério</summary>
+    <h3>Horas extras</h3>${occTable(r.S.he,'Horas extras')}
+    ${r.wk.length?`<h3>Totais por semana</h3><div class="scroll"><table><thead><tr><th>Semana (seg a dom)</th><th class="num">Trabalhado</th><th class="num">Extras diárias</th><th class="num">Acima de ${fmt(P.sem)}</th></tr></thead><tbody>${r.wk.map(w=>`<tr><td>${brDate(isoN(w.mon))} a ${brDate(isoN(w.mon+6))}</td><td class="num">${fmt(w.worked)}</td><td class="num">${fmt(w.he)}</td><td class="num">${w.exc?fmt(w.exc):'—'}</td></tr>`).join('')}</tbody></table></div>`:''}
+    <h3>Excesso de jornada (acima de ${fmt(r.LIM)})</h3>${occTable(r.S.ex,'Excedente')}
+    <h3>Interjornada inferior a ${fmt(P.inter)}</h3>${occTable(r.S.ie,'Suprimido')}
+    <h3>Intrajornada inferior ao mínimo</h3>${occTable(r.S.ia,'Suprimido')}
+    <h3>Descanso inferior a ${fmt(P.dsr)} na folga</h3>${occTable(r.S.ds,'Suprimido')}
+    <h3>Trabalho sem folga semanal</h3>${occTable(r.S.sf,'')}
+    ${P.intMax?`<h3>Intervalo acima de ${fmt(P.intMax)}</h3>${occTable(r.S.im,'Excedente')}`:''}
+  </details>
+
+  <details><summary>Ver detalhamento diário</summary>
+    <div class="scroll"><table><thead><tr><th>Data</th><th>Dia</th><th>Marcações</th><th>Linha do dia (0h a 24h)</th><th class="num">Trabalhado</th><th class="num">Espelho</th><th class="num">Intervalo</th><th class="num">Descanso anterior</th><th>Desvios</th></tr></thead><tbody>
+    ${days.map(d=>`<tr class="${d.work?'':'off'}"><td>${brDate(d.date)}</td><td>${weekday(d.date)}</td><td>${d.work?esc(d.marks.join(' ')):esc(d.status||'Sem marcação')}</td><td>${bar(d)}</td><td class="num">${d.work?fmt(d.worked):''}</td><td class="num">${d.totalEsp!=null?fmt(d.totalEsp):''}</td><td class="num">${d.work?(d.breaks.length?fmt(d.brk):'sem'):''}</td><td class="num">${d.gapPrev!=null?fmt(d.gapPrev):''}</td><td class="wrapc">${(d.flags||[]).map(f=>'<span class="tag '+(f.c||'')+'">'+esc(f.t)+'</span>').join('')}</td></tr>`).join('')}
+    </tbody></table></div>
+  </details>
+
+  <p class="legal" style="margin-top:18px">Fundamentação: hora extra e limite diário, CLT arts. 58, §1º, e 59 (motorista: art. 235-C); compensação, art. 59, §§2º, 5º e 6º, e Súmula 85 do TST; intrajornada, art. 71, §§1º, 4º e 5º, e Súmula 118 do TST; interjornada, art. 66 e OJ 355 da SDI-1; descanso semanal, art. 67, Lei 605/1949, Súmula 110 e OJ 410 da SDI-1. Apuração automática a partir das marcações; confira com contrato, escala e norma coletiva.</p>`;
+  const rep=$('#report'); rep.innerHTML=html; rep.hidden=false;
+  $('#btnCsv').onclick=()=>downloadCsv([r],'desvios_'+e.mat+'.csv');
+  rep.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function downloadCsv(results,name){
+  const q=s=>'"'+String(s==null?'':s).replace(/"/g,'""')+'"';
+  const lines=[['Matrícula','Nome','Função','Data','Dia','Desvio','Descrição','Tempo'].map(q).join(';')];
+  results.forEach(r=>r.occ.forEach(o=>lines.push([r.emp.mat,r.emp.nome,r.emp.funcao,brDate(o.date),weekday(o.date),o.tipo,o.det,o.min!=null?fmt(o.min):''].map(q).join(';'))));
+  const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+$('#btnCsvAll').addEventListener('click',()=>{ const P=params(); downloadCsv(Object.values(emps).map(e=>analyze(e,P)),'desvios_todos.csv'); });
+
+const drop=$('#drop');
+$('#fileIn').addEventListener('change',e=>{ if(e.target.files.length) addFiles([...e.target.files]); e.target.value=''; });
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop',e=>{ const fl=[...e.dataTransfer.files]; if(fl.length) addFiles(fl); });
+})();
+</script>
+</body></html>
